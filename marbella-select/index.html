@@ -46,8 +46,13 @@ addEventListener("error", function(e){
 }
 *{box-sizing:border-box}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-html{overflow-x:clip;scroll-behavior:smooth;scroll-padding-top:calc(90px + env(safe-area-inset-top,0px));scrollbar-color:var(--brass) var(--paper)}
+html{scrollbar-width:none;overflow-x:clip;scroll-behavior:smooth;scroll-padding-top:calc(90px + env(safe-area-inset-top,0px));scrollbar-color:var(--brass) var(--paper)}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:300;font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-variant-numeric:lining-nums}
+html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;background:transparent}
+.sbar{position:fixed;top:0;right:3px;z-index:95;width:4px;border-radius:4px;background:rgba(155,125,72,.75);opacity:0;transition:opacity .5s var(--ease),width .25s;pointer-events:none;will-change:transform}
+.sbar.on{opacity:1;pointer-events:auto;cursor:grab}
+.sbar:hover,.sbar.drag{width:6px;opacity:1}
+@media (hover:none){.sbar{display:none}}
 ::selection{background:var(--brass);color:var(--white)}
 img{max-width:100%;display:block}
 a{color:inherit}
@@ -71,6 +76,8 @@ p{text-wrap:pretty}
 .opened #pre{transform:translateY(-100%);visibility:hidden}
 
 /* ---------- Header ---------- */
+.top::before{content:"";position:absolute;left:0;right:0;top:0;height:150%;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(12,22,29,.62) 0%,rgba(12,22,29,.38) 45%,rgba(12,22,29,0) 100%);-webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px);-webkit-mask-image:linear-gradient(180deg,#000 0%,#000 40%,transparent 100%);mask-image:linear-gradient(180deg,#000 0%,#000 40%,transparent 100%);transition:opacity .6s var(--ease)}
+.top.solid::before,.top.open::before{opacity:0}
 .top{position:fixed;inset:0 0 auto;z-index:50;padding-top:env(safe-area-inset-top,0px);color:var(--white);transition:background .5s var(--ease),color .5s,box-shadow .5s}
 .top.solid,.top.open{background:rgba(244,242,237,.96);color:var(--ink);box-shadow:0 1px 0 var(--line);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .top .wrap{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;height:104px;transition:height .5s var(--ease)}
@@ -108,7 +115,7 @@ p{text-wrap:pretty}
 .hero-bg{position:absolute;inset:0;overflow:hidden}
 .hero-bg>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 40%;transform:scale(1.08);transition:transform 9s cubic-bezier(.2,.6,.2,1),opacity 1.4s var(--ease)}
 .opened .hero-bg>img{transform:scale(1)}
-.yt{position:absolute;top:50%;left:50%;width:100vw;height:56.25vw;min-height:100%;min-width:177.78vh;transform:translate(-50%,-50%);border:0;pointer-events:none;opacity:0;transition:opacity 1.6s var(--ease)}
+.yt{position:absolute;top:50%;left:50%;width:100vw;height:56.25vw;min-height:100%;min-width:177.78vh;transform:translate(-50%,-50%) scale(1.24);border:0;pointer-events:none;opacity:0;transition:opacity 2.4s var(--ease)}
 .yt.ready{opacity:1}
 .hero-shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(12,22,29,.55) 0%,rgba(12,22,29,0) 28%,rgba(12,22,29,0) 48%,rgba(12,22,29,.78) 100%)}
 .hero-inner{position:relative;padding-bottom:clamp(30px,6vh,64px)}
@@ -879,6 +886,7 @@ body.lock{overflow:hidden}
   </div>
 </div>
 
+<div class="sbar" id="sbar" aria-hidden="true"></div>
 <div class="sheet-dim" id="sheetDim"></div>
 <div class="cur" id="cur" aria-hidden="true"><span id="curT">+</span></div>
 
@@ -922,20 +930,32 @@ window.MS_VIDEOS = { hero: "_Q-z3AneH_U", band: "NS5QCDojcHI" };
   });
 
   /* YouTube backgrounds */
-  function ytBg(holder, id){
+  /* YouTube backgrounds: the photo stays for a while, then the video fades in only once it has been
+     playing for a few seconds (so YouTube's own title never shows), slightly enlarged to crop its edges. */
+  var HERO_PHOTO_MS = 8000;          /* how long the still photo stays before the video appears */
+  var t0 = Date.now();
+  function ytBg(holder, id, minMs){
     if(!holder || !id || reduce || innerWidth < 981 || location.protocol === "file:") return;
-    var f = document.createElement("iframe");
+    var f = document.createElement("iframe"), shown = false;
     f.className = "yt"; f.setAttribute("aria-hidden","true"); f.tabIndex = -1; f.title = "";
     f.allow = "autoplay; encrypted-media";
-    f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&mute=1&loop=1&playlist=" + id + "&controls=0&modestbranding=1&playsinline=1&rel=0&iv_load_policy=3&disablekb=1";
-    f.addEventListener("load", function(){ setTimeout(function(){ f.classList.add("ready"); }, 1200); });
+    f.src = "https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&mute=1&loop=1&playlist=" + id + "&controls=0&modestbranding=1&playsinline=1&rel=0&iv_load_policy=3&disablekb=1&fs=0&enablejsapi=1&origin=" + encodeURIComponent(location.origin);
+    function show(){ if(shown) return; var wait = Math.max(0, (minMs || 0) - (Date.now() - t0)); shown = true; setTimeout(function(){ f.classList.add("ready"); }, wait); }
+    addEventListener("message", function(e){
+      if(e.source !== f.contentWindow) return;
+      try{ var d = typeof e.data === "string" ? JSON.parse(e.data) : e.data; if(d && d.info && d.info.currentTime > 3.6) show(); }catch(err){}
+    });
+    f.addEventListener("load", function(){
+      try{ f.contentWindow.postMessage(JSON.stringify({ event: "listening", id: id }), "*"); }catch(err){}
+      setTimeout(show, 6500);            /* safety net if YouTube does not report its time */
+    });
     holder.appendChild(f);
   }
   addEventListener("load", function(){ safe(function(){
-    setTimeout(function(){ ytBg($("#heroBg"), MS_VIDEOS.hero); }, 1500);
+    setTimeout(function(){ ytBg($("#heroBg"), MS_VIDEOS.hero, HERO_PHOTO_MS); }, 1200);
     var band = $("#bandBg"), started = false;
     if("IntersectionObserver" in window){
-      new IntersectionObserver(function(es, o){ es.forEach(function(e){ if(e.isIntersecting && !started){ started = true; ytBg(band, MS_VIDEOS.band); o.disconnect(); } }); }, {rootMargin:"300px"}).observe(band);
+      new IntersectionObserver(function(es, o){ es.forEach(function(e){ if(e.isIntersecting && !started){ started = true; ytBg(band, MS_VIDEOS.band, 0); o.disconnect(); } }); }, {rootMargin:"300px"}).observe(band);
     }
   }); });
 
@@ -1318,6 +1338,27 @@ window.MS_VIDEOS = { hero: "_Q-z3AneH_U", band: "NS5QCDojcHI" };
     }
     function boot(){ initLenis(); requestAnimationFrame(loop); }
     if(window.Lenis) boot(); else { addEventListener("load", boot); }
+  });
+
+  /* ---------- Scroll indicator: visible only while scrolling (or when hovered/dragged) ---------- */
+  safe(function(){
+    var sb = $("#sbar"), hideT = null, dragging = false, startY = 0, startScroll = 0;
+    function place(){
+      var H = document.documentElement.scrollHeight, V = innerHeight; if(H <= V) return;
+      var h = Math.max(40, V * V / H), y = (scrollY / (H - V)) * (V - h);
+      sb.style.height = h + "px"; sb.style.transform = "translate3d(0," + y.toFixed(1) + "px,0)";
+    }
+    function flash(){ place(); sb.classList.add("on"); clearTimeout(hideT); hideT = setTimeout(function(){ if(!dragging && !sb.matches(":hover")) sb.classList.remove("on"); }, 1100); }
+    addEventListener("scroll", flash, {passive:true}); addEventListener("resize", place);
+    sb.addEventListener("mouseleave", function(){ if(!dragging) flash(); });
+    sb.addEventListener("pointerdown", function(e){ dragging = true; sb.classList.add("drag"); startY = e.clientY; startScroll = scrollY; sb.setPointerCapture(e.pointerId); e.preventDefault(); });
+    sb.addEventListener("pointermove", function(e){
+      if(!dragging) return; var H = document.documentElement.scrollHeight, V = innerHeight, h = Math.max(40, V * V / H);
+      var y = startScroll + (e.clientY - startY) * (H - V) / (V - h);
+      if(lenis) lenis.scrollTo(y, { immediate: true }); else scrollTo(0, y);
+    });
+    sb.addEventListener("pointerup", function(){ dragging = false; sb.classList.remove("drag"); flash(); });
+    place();
   });
 
   /* ---------- Header tint, contextual bar, browser chrome colour ---------- */
